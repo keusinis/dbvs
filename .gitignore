@@ -1,6 +1,7 @@
 ### PGC ###
 # pgc precompiler output
 *.c
+main
 
 # Prerequisites
 *.d
