@@ -43,15 +43,12 @@ DECLARE
     used_hours INTERVAL;
     last_visit_date_old DATE;
 BEGIN
-    -- Start transaction
     BEGIN
-        -- Check if last_visit_date is the same as today
         SELECT last_visit_date INTO last_visit_date_old
         FROM member
         WHERE NEW.member_id = member.member_id;
 
         IF last_visit_date_old < DATE(NEW.checkin_time) THEN
-            -- Update member table
             UPDATE member
             SET gym_hours_used = INTERVAL '0 hours',
                 pool_hours_used = INTERVAL '0 hours',
@@ -86,23 +83,16 @@ BEGIN
                 RAISE EXCEPTION 'Invalid value. Must be either "gym" or "pool".';
         END CASE;
 
-        -- Check if enough time left
         IF used_hours >= hours_per_day THEN
-            -- Raise an exception if not enough time left
             RAISE EXCEPTION 'Not enough time left for member_id=%, used_hours=%, hours_per_day=%',
                 NEW.member_id, used_hours, hours_per_day;
         END IF;
         
     EXCEPTION
-        -- Log the error or take other appropriate action
         WHEN OTHERS THEN
             RAISE NOTICE 'Error in checkin_check_time: %', SQLERRM;
-            -- No explicit ROLLBACK needed, as transactions are implicitly managed by PostgreSQL
             RETURN NULL;
     END;
-
-    -- No explicit COMMIT needed, as transactions are implicitly managed by PostgreSQL
-
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -113,7 +103,6 @@ ON checkin
 FOR EACH ROW
 EXECUTE FUNCTION checkin_check_time();
 
--- Creating the late_fee_trigger
 CREATE OR REPLACE FUNCTION calculate_late_fee()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -161,10 +150,7 @@ DECLARE
 	hours_spent INTERVAL;
 BEGIN
 
-    -- Calculate the hours spent based on check-in and check-out times
     hours_spent := NEW.checkout_time - NEW.checkin_time;
-
-    -- Update the member table based on gym_or_pool value
     CASE
         WHEN NEW.gym_or_pool = 'gym' THEN
             UPDATE member
@@ -181,7 +167,6 @@ BEGIN
             WHERE member_id = NEW.member_id;
 
         ELSE
-            -- Raise an exception for invalid values
             RAISE EXCEPTION 'Invalid value. Must be either "gym" or "pool".';
     END CASE;
 
@@ -189,7 +174,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create a trigger to execute the update_time_spent function after an update on checkout_time
 CREATE TRIGGER checkout_trigger
 AFTER UPDATE OF checkout_time ON checkin
 FOR EACH ROW
