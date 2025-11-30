@@ -1,0 +1,457 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sqlca.h>
+
+int get_int()
+{
+    int i;
+    while(1)
+    {
+        if(scanf("%d", &i) == 1 && getchar() == '\n')
+            return i;
+        else 
+        {
+            printf("Wrong input! \n");
+            while(getchar() != '\n')
+                ;
+        }
+    }
+}
+
+void charToUpper(char* ch)
+{
+    if (*ch >= 'a' && *ch <= 'z') 
+        *ch -= ('a' - 'A');
+}
+
+int checkin_choice ()
+{   
+    int choice;
+    EXEC SQL BEGIN DECLARE SECTION;
+        long member_id;
+        char name[255];
+        char surname[255];
+
+        char nameEntered[255];
+        char surnameEntered[255];
+    EXEC SQL END DECLARE SECTION;
+
+    do
+    {
+        printf("\n0. Cancel...\n");
+        printf("1. Search for Id by name and/or surname...\n");
+        printf("2. Enter member Id...\n");
+        printf("Select option: ");
+
+        choice = get_int();
+
+        switch (choice)
+        {
+            case 0:
+                return 0;
+            case 1:
+                printf("Enter name (empty for any): ");
+                fgets(nameEntered, sizeof(nameEntered), stdin);
+                nameEntered[strcspn(nameEntered, "\n")] = '\0';
+
+                printf("Enter surname (empty for any): ");
+                fgets(surnameEntered, sizeof(surnameEntered), stdin);
+                surnameEntered[strcspn(surnameEntered, "\n")] = '\0';
+
+                printf("matches for: %s %s\n", nameEntered, surnameEntered);
+
+                EXEC SQL DECLARE curs CURSOR FOR
+                    SELECT member_id, name, surname
+                    FROM member
+                    WHERE 
+                    (name = :nameEntered OR :nameEntered = '') AND
+                    (surname = :surnameEntered OR :surnameEntered = '')
+                    ORDER BY member_id;
+
+                printf("Member_id | Name | Surname\n");
+
+                EXEC SQL OPEN curs ;
+                while ( 1 )
+                {
+                    EXEC SQL FETCH curs INTO :member_id, :name, :surname;
+                    if (SQLCODE == 100)
+                        break;
+                    else if (SQLCODE != 0)
+                    {
+                        printf("Error fetching data: %ld\n", SQLCODE);
+                        break;
+                    }
+                    printf("%d %s %s\n", member_id, name, surname);
+                }
+                EXEC SQL CLOSE curs ;
+
+                printf("\nEnter member_id (0 to cancel): ");
+                return get_int();
+                break;        
+            case 2:
+                EXEC SQL DECLARE curs1 CURSOR FOR
+                    SELECT member_id, name, surname
+                    FROM member
+                    ORDER BY member_id;
+                printf("Member_id | Name | Surname\n");
+                EXEC SQL OPEN curs1 ;
+                while ( 1 )
+                {
+                    EXEC SQL FETCH curs1 INTO :member_id, :name, :surname;
+                    if (SQLCODE == 100)
+                        break;
+                    else if (SQLCODE != 0)
+                    {
+                        printf("Error fetching data: %ld\n", SQLCODE);
+                        break;
+                    }
+                    printf("%d %s %s\n", member_id, name, surname);
+                }
+                EXEC SQL CLOSE curs1 ;
+
+                printf("\nEnter member_id (0 to cancel): ");
+                return get_int();
+                break;
+            default:
+                printf("Invalid choice. Please enter a number between 0 and 2\n");
+        }
+    } while (1);
+}
+
+short membership_update()
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        long member_id_param;
+        long membership_id_param;
+        char bought_on_param[11];
+        long duration_in_months_param;
+    EXEC SQL END DECLARE SECTION;
+
+    char inbuffer[40];
+    short ok = 1;
+
+    EXEC SQL DECLARE curs3 CURSOR FOR
+        SELECT member_id, membership_id, bought_on, duration_in_months
+        FROM member_membership;
+
+    EXEC SQL OPEN curs3;
+
+    while (1)
+    {
+        EXEC SQL FETCH curs3 INTO :member_id_param, :membership_id_param, :bought_on_param, :duration_in_months_param;
+        if (SQLCODE == 100)
+            goto ending;
+        else if (SQLCODE != 0)
+        {   
+            goto error;
+        }
+        printf("\nmember_id: %d\n", member_id_param);
+        printf("membership_id_param: %d\n", membership_id_param);
+        printf("bought_on: %s\n", bought_on_param);
+        printf("duration_in_months: %d\n", duration_in_months_param);
+
+        action:
+        printf("Choose: N, D, U, F, C\n");
+        scanf("%s", inbuffer);
+
+        charToUpper(&inbuffer[0]);
+        switch (inbuffer[0])
+        {
+        case 'N':
+            break;
+        case 'D':
+            EXEC SQL DELETE FROM member_membership
+            WHERE CURRENT OF curs3;
+            break;
+        case 'U':
+            printf("Enter new values:\n");
+            printf("Enter membership_id_param: (1-8)");
+            scanf("%d", &membership_id_param);
+
+            EXEC SQL UPDATE member_membership
+                SET membership_id = :membership_id_param
+                WHERE CURRENT OF curs3;
+            break;
+        case 'F':
+            goto ending;
+        case 'C':
+            ok = 0;
+            goto ending;
+        default:
+            goto action;
+        }
+    }
+
+    error:
+        printf("SQL Error %ld: %s\n", sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+        ok = 0;
+
+    ending:
+        EXEC SQL CLOSE curs3;
+
+    if (ok)
+    {
+        EXEC SQL COMMIT;
+        EXEC SQL REFRESH MATERIALIZED VIEW member_hours_summary;
+    }
+    else
+        EXEC SQL ROLLBACK;
+
+    return ok;
+}
+
+int addNewMember(const char* name, const char* surname, const char* dob,
+                 const char* city, const char* street, int house, int apartment)
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        char nameParam[255];
+        char surnameParam[255];
+        char dobParam[11];
+        char cityParam[255];
+        char streetParam[255];
+        long houseParam;
+        long apartmentParam;
+        long addressIdParam;
+    EXEC SQL END DECLARE SECTION;
+
+    strcpy(nameParam, name);
+    strcpy(surnameParam, surname);
+    strcpy(dobParam, dob);
+    strcpy(cityParam, city);
+    strcpy(streetParam, street);
+    houseParam = house;
+    apartmentParam = apartment;
+
+    EXEC SQL SELECT address_id
+    INTO :addressIdParam
+    FROM address
+    WHERE city = :cityParam AND street = :streetParam AND house = :houseParam AND apartment = :apartmentParam;
+    
+    if(SQLCODE < 0)
+    {
+        printf("Error fetching address: %ld\n", SQLCODE);
+        return -1;
+    }
+    if(SQLCODE == 100)
+    {
+        printf("Inserting new address\n");
+        EXEC SQL INSERT INTO address (city, street, house, apartment)
+        VALUES (:cityParam, :streetParam, :houseParam, :apartmentParam)
+        RETURNING address_id INTO :addressIdParam;
+
+        if (SQLCODE != 0)
+        {
+            printf("Error inserting address: %ld\n", SQLCODE);
+            return -1;
+        }
+    }
+    else
+    {
+        printf("Using existing address\n");
+    }
+
+    EXEC SQL INSERT INTO member (name, surname, dob, address_id)
+        VALUES (:nameParam, :surnameParam, TO_DATE(:dobParam, 'YYYY-MM-DD'), :addressIdParam);
+
+    if (SQLCODE != 0)
+    {
+        printf("Error inserting member: %ld\n", SQLCODE);
+
+        EXEC SQL DELETE FROM address WHERE address_id = :addressIdParam;
+        return -1;
+    }
+
+    EXEC SQL COMMIT;
+
+    return 0;
+}
+
+void readMemberInfoFromFile(const char* filename)
+{
+    FILE* file = fopen(filename, "r");
+    if (file == NULL)
+    {
+        perror("Error opening file");
+        return;
+    }
+
+    char name[255];
+    char surname[255];
+    char dob[11];
+    char city[255];
+    char street[255];
+    int house;
+    int apartment;
+
+    while (fscanf(file, "%s %s %s %s %s %d %d", name, surname, dob, city, street, &house, &apartment) == 7)
+    {
+        int result = addNewMember(name, surname, dob, city, street, house, apartment);
+
+        if (result == 0)
+            printf("Member added successfully!\n");
+        else
+            printf("Failed to add member %s %s.\n", name, surname);
+        
+        name[0] = '\0';
+        surname[0] = '\0';
+        dob[0] = '\0';
+        city[0] = '\0';
+        street[0] = '\0';
+        house = 0;
+        apartment = 0;
+    }
+
+    fclose(file);
+}
+
+int main()
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+        char DB_NAME[50];
+        char DB_USER[50];
+        char DB_PASS[50];
+    EXEC SQL END DECLARE SECTION;
+
+    char *env_name = getenv("DB_NAME");
+    char *env_user = getenv("DB_USER");
+    char *env_pass = getenv("DB_PASS");
+
+    if (!env_name || !env_user || !env_pass)
+    {
+        fprintf(stderr, "Error: DB_NAME, DB_USER or DB_PASS environment variable not set.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    strncpy(DB_NAME, env_name, sizeof(DB_NAME)-1);
+    DB_NAME[sizeof(DB_NAME)-1] = '\0';
+
+    strncpy(DB_USER, env_user, sizeof(DB_USER)-1);
+    DB_USER[sizeof(DB_USER)-1] = '\0';
+
+    strncpy(DB_PASS, env_pass, sizeof(DB_PASS)-1);
+    DB_PASS[sizeof(DB_PASS)-1] = '\0';
+
+    EXEC SQL CONNECT TO :DB_NAME USER :DB_USER USING :DB_PASS;
+    EXEC SQL REFRESH MATERIALIZED VIEW member_hours_summary;
+
+    int choice;
+    if (sqlca.sqlcode < 0)
+    {
+        fprintf(stderr, "Database connection failed: %s\n", sqlca.sqlerrm.sqlerrmc);
+        exit(EXIT_FAILURE);
+    }
+
+    do {
+        printf("0. Exit\n");
+        printf("1. Check-in member..\n");
+        printf("2. Check-out member...\n");
+        printf("3. Add new member (file \"member.txt\"):\n");
+        printf("4. Edit member memberships...\n");
+
+        printf("Select option: ");
+        choice = get_int();
+
+        switch (choice)
+        {
+            case 0: // Exit
+                printf("Exiting the program. Goodbye!\n");
+                break;
+            case 1: // New check-in                
+                EXEC SQL BEGIN DECLARE SECTION;
+                    long mem_id;
+                    char gym_pool[10];
+                EXEC SQL END DECLARE SECTION;
+                mem_id = checkin_choice();
+                if(mem_id > 0)
+                {
+                    printf("1. Gym\n2. Pool\nChoice: ");
+                    int type = get_int();
+                    switch(type)
+                    {
+                        case 1:
+                            strcpy(gym_pool,"gym");
+                            break;
+                        case 2:
+                            strcpy(gym_pool,"pool");
+                            break;
+                        default:
+                            strcpy(gym_pool,"empty");
+                            break;
+                        
+                    }
+                    EXEC SQL INSERT INTO checkin (member_id, location_id, gym_or_pool)
+                    VALUES (:mem_id, 1, :gym_pool);
+                    if (SQLCODE != 0)
+                    {
+                        printf("Error checking-in: %ld\n", SQLCODE);
+                        break;
+                    }
+                    EXEC SQL COMMIT;
+                }
+                break;
+            case 2: // Check-out
+                    EXEC SQL BEGIN DECLARE SECTION;
+                        char name[255];
+                        char surname[255];
+                    EXEC SQL END DECLARE SECTION;
+
+                    EXEC SQL DECLARE curs2 CURSOR FOR
+                        SELECT member_id, name, surname
+                        FROM currently_checked_in_members
+                        ORDER BY member_id;
+
+                    printf("Currently checked-in members:\nMember_id | Name | Surname\n");
+
+                    EXEC SQL OPEN curs2;
+                    while (1) {
+                        EXEC SQL FETCH curs2 INTO :mem_id, :name, :surname;
+                        if (SQLCODE == 100) // No more rows
+                            break;
+                        else if (SQLCODE != 0) {
+                            printf("Error fetching data: %ld\n", SQLCODE);
+                            break;
+                        }
+                        printf("%d %s %s\n", mem_id, name, surname);
+                    }
+                    EXEC SQL CLOSE curs2;
+                    printf("\nEnter member_id (0 to cancel): ");
+                    mem_id = get_int();
+                    
+                    if(mem_id > 0)
+                    {
+                        EXEC SQL UPDATE checkin
+                        SET checkout_time = CURRENT_TIMESTAMP
+                        WHERE member_id = :mem_id;
+                        if (SQLCODE != 0) 
+                        {
+                            printf("Error fetching data: %ld\n", SQLCODE);
+                            break;
+                        }
+                    EXEC SQL COMMIT;
+                    }
+                break;
+                
+            case 3: // Add new member
+                printf("Add new member(s) (info in file \"member.txt\"):\n");
+                    const char* filename = "member.txt";
+                    readMemberInfoFromFile(filename);
+                break;            
+            case 4: // Edit member membership
+                short result = membership_update();
+
+                if(result)
+                    printf("Changes applied successfully\n");
+                else
+                    printf("Cancelled\n");
+
+                break;
+            default:
+                printf("Invalid choice. Please enter a number between 0 and 4\n");
+        }
+        printf("\n");
+
+    } while (choice != 0);
+
+    EXEC SQL DISCONNECT;
+    return 0;
+}

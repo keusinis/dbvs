@@ -1,0 +1,10 @@
+John Doe 1988-07-12 Los_Angeles Sunset_Blvd 102 55
+Alice Brown 1992-03-28 Chicago Lake_Shore 87 12
+Michael Smith 1980-11-05 Houston Elm_St 45 8
+Emma Wilson 1999-09-17 Boston Beacon_St 23 16
+David Johnson 1975-02-02 Miami Ocean_Drive 301 44
+Sophia Martinez 2001-06-11 Dallas Maple_Ave 77 31
+Liam Clark 1993-12-24 Seattle Pine_St 56 27
+Olivia Davis 1986-04-19 Denver Broadway 140 20
+Noah Lewis 1997-08-30 Phoenix Central_Ave 19 14
+Ava Walker 1990-10-03 Atlanta Peachtree_St 210 18
